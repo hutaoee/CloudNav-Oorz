@@ -247,18 +247,38 @@ const CONFIG = {
   password: "${password}",
   siteName: "${(localSiteSettings.navTitle || 'CloudNav').replace(/"/g, '\\"')}"
 };
+const MODE_KEY = 'cloudnav_ui_mode';
+const POPUP_PATH = 'popup.html';
 
 let linkCache = [];
 let categoryCache = [];
 
+async function getUiMode() {
+    const data = await chrome.storage.local.get(MODE_KEY);
+    return data[MODE_KEY] === 'sidepanel' ? 'sidepanel' : 'popup';
+}
+
+async function setUiMode(mode) {
+    await chrome.storage.local.set({ [MODE_KEY]: mode });
+    await chrome.action.setPopup({ popup: mode === 'popup' ? POPUP_PATH : '' });
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+  setUiMode('popup').catch(() => {});
   refreshCache().then(buildMenus);
+});
+
+chrome.runtime.onStartup?.addListener(() => {
+    getUiMode().then((mode) => setUiMode(mode)).catch(() => {});
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes.cloudnav_data) {
         refreshCache().then(buildMenus);
+    }
+    if (area === 'local' && changes[MODE_KEY]) {
+        setUiMode(changes[MODE_KEY].newValue === 'sidepanel' ? 'sidepanel' : 'popup').catch(() => {});
     }
 });
 
@@ -266,7 +286,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === 'open-sidepanel') {
         const targetWindowId = message.windowId || sender.tab?.windowId;
         if (targetWindowId) {
-            chrome.sidePanel.open({ windowId: targetWindowId }).then(() => {
+            setUiMode('sidepanel').then(() => chrome.sidePanel.open({ windowId: targetWindowId })).then(() => {
                 sendResponse({ ok: true });
             }).catch((error) => {
                 console.error('Failed to open side panel', error);
@@ -274,6 +294,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             });
             return true;
         }
+    }
+    if (message?.type === 'switch-to-popup') {
+        setUiMode('popup').then(() => {
+            sendResponse({ ok: true });
+        }).catch((error) => {
+            console.error('Failed to switch to popup', error);
+            sendResponse({ ok: false });
+        });
+        return true;
     }
     return false;
 });
@@ -304,6 +333,9 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 chrome.action.onClicked.addListener(async (tab) => {
+    const mode = await getUiMode();
+    if (mode !== 'sidepanel') return;
+
     const windowId = tab.windowId;
     const existingPort = windowPorts[windowId];
 
@@ -324,14 +356,20 @@ chrome.action.onClicked.addListener(async (tab) => {
 });
 
 chrome.commands.onCommand.addListener(async (command) => {
-    if (command !== 'open_sidepanel') return;
-
     try {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (!tab?.windowId) return;
-        await chrome.sidePanel.open({ windowId: tab.windowId });
+        if (command === 'open_sidepanel') {
+            await setUiMode('sidepanel');
+            await chrome.sidePanel.open({ windowId: tab.windowId });
+            return;
+        }
+        if (command === '_execute_action') {
+            await setUiMode('popup');
+            await chrome.action.openPopup();
+        }
     } catch (e) {
-        console.error('Failed to open side panel by command', e);
+        console.error('Failed to handle command', e);
     }
 });
 
@@ -502,7 +540,7 @@ function notify(title, message) {
         .search-input { flex: 1; min-width: 0; width: 0; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--hover); color: var(--text); outline: none; font-size: 13px; }
         .search-input:focus { border-color: var(--accent); }
         
-        .refresh-btn { width: 30px; display: flex; items-center; justify-content: center; border: 1px solid var(--border); background: var(--hover); border-radius: 6px; color: var(--muted); cursor: pointer; transition: all 0.2s; }
+        .refresh-btn { width: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); background: var(--hover); border-radius: 6px; color: var(--muted); cursor: pointer; transition: all 0.2s; }
         .refresh-btn:hover { color: var(--accent); border-color: var(--accent); }
         .refresh-btn:active { transform: scale(0.95); }
         .rotating { animation: spin 1s linear infinite; }
@@ -537,6 +575,9 @@ function notify(title, message) {
 <body>
     <div class="header">
         <input type="text" id="search" class="search-input" placeholder="搜索..." autocomplete="off">
+        <button id="switchPopup" class="refresh-btn" title="切到小窗">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16"/></svg>
+        </button>
         <button id="refresh" class="refresh-btn" title="同步最新数据">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
         </button>
@@ -576,6 +617,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const container = document.getElementById('content');
     const searchInput = document.getElementById('search');
     const refreshBtn = document.getElementById('refresh');
+    const switchPopupBtn = document.getElementById('switchPopup');
     
     let allLinks = [];
     let allCategories = [];
@@ -716,6 +758,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     searchInput.addEventListener('input', (e) => render(e.target.value));
     refreshBtn.addEventListener('click', () => loadData(true));
+    switchPopupBtn?.addEventListener('click', async () => {
+        try {
+            await chrome.runtime.sendMessage({ type: 'switch-to-popup' });
+            window.close();
+        } catch (e) {
+            console.error('Switch to popup failed', e);
+        }
+    });
 
     chrome.runtime.onMessage.addListener((msg) => {
         if (msg.type === 'refresh') {
@@ -767,7 +817,7 @@ const extPopupHtml = `<!DOCTYPE html>
         @keyframes spin { 100% { transform: rotate(360deg); } }
         .search { margin-top: 12px; width: 100%; border: 1px solid var(--line); background: rgba(255,255,255,0.58); color: var(--text); border-radius: 14px; padding: 11px 13px; outline: none; font-size: 13px; }
         @media (prefers-color-scheme: dark) { .search { background: rgba(15,23,42,0.8); } }
-        .chips { display: none; }
+        .chips { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 0; }
         .chip { white-space: nowrap; border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 999px; padding: 7px 11px; font-size: 12px; cursor: pointer; }
         .chip.active { color: white; background: var(--accent); border-color: transparent; box-shadow: 0 10px 28px rgba(37,99,235,0.25); }
         .results { display: flex; flex-direction: column; gap: 10px; }
@@ -801,6 +851,7 @@ const extPopupHtml = `<!DOCTYPE html>
             </div>
             <input id="search" class="search" type="text" placeholder="搜标题、网址、描述" autocomplete="off">
         </section>
+        <div id="chips" class="chips"></div>
         <div id="content" class="results">
             <div class="empty">初始化中...</div>
         </div>
@@ -817,12 +868,14 @@ const CACHE_KEY = 'cloudnav_data';
 
 document.addEventListener('DOMContentLoaded', async () => {
     const content = document.getElementById('content');
+    const chips = document.getElementById('chips');
     const searchInput = document.getElementById('search');
     const refreshBtn = document.getElementById('refresh');
     const openSidepanelBtn = document.getElementById('openSidepanel');
 
     let allLinks = [];
     let allCategories = [];
+    let activeCategory = 'all';
 
     const escapeHtml = (value) => String(value ?? '')
         .replace(/&/g, '&amp;')
@@ -851,48 +904,53 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    const renderChips = () => {
+        const items = [{ id: 'all', name: '全部' }, ...allCategories];
+        chips.innerHTML = items.map((category) => \`
+            <button class="chip \${activeCategory === category.id ? 'active' : ''}" data-id="\${category.id}">
+                \${escapeHtml(category.name)}
+            </button>
+        \`).join('');
+    };
+
     const render = () => {
         const query = searchInput.value.trim().toLowerCase();
-        const groupedLinks = allCategories.map((category) => {
-            const links = allLinks.filter((link) => {
-                if (link.categoryId !== category.id) return false;
-                if (!query) return true;
-                return link.title.toLowerCase().includes(query) ||
-                    link.url.toLowerCase().includes(query) ||
-                    (link.description && link.description.toLowerCase().includes(query));
-            });
+        const filteredLinks = allLinks.filter((link) => {
+            if (activeCategory !== 'all' && link.categoryId !== activeCategory) return false;
+            if (!query) return true;
+            return link.title.toLowerCase().includes(query) ||
+                link.url.toLowerCase().includes(query) ||
+                (link.description && link.description.toLowerCase().includes(query));
+        });
 
-            return { category, links };
-        }).filter((group) => group.links.length > 0);
-
-        if (groupedLinks.length === 0) {
+        if (filteredLinks.length === 0) {
             content.innerHTML = '<div class="empty">这里还没有符合条件的链接</div>';
             return;
         }
 
-        content.innerHTML = groupedLinks.map(({ category, links }) => \`
-            <section style="display:flex; flex-direction:column; gap:10px;">
-                <div style="display:flex; align-items:center; justify-content:space-between;">
-                    <button class="chip active" type="button">\${escapeHtml(category.name)}</button>
-                    <span style="font-size:11px; color:var(--muted);">\${links.length} 个</span>
-                </div>
-                <div class="results">
-                    \${links.map((link) => \`
-                        <a class="card" href="\${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer">
-                            <div class="icon"><img src="\${escapeHtml(getFaviconUrl(link))}" alt=""></div>
-                            <div class="meta">
-                                <div class="title">\${escapeHtml(link.title)}</div>
-                                <div class="url">\${escapeHtml(getHostname(link.url))}</div>
-                                <div class="badge">\${escapeHtml(category.name)}</div>
-                            </div>
-                        </a>
-                    \`).join('')}
-                </div>
-            </section>
-        \`).join('');
+        content.innerHTML = filteredLinks.map((link) => {
+            const category = allCategories.find((item) => item.id === link.categoryId);
+            return \`
+                <a class="card" href="\${escapeHtml(link.url)}" target="_blank" rel="noopener noreferrer">
+                    <div class="icon"><img src="\${escapeHtml(getFaviconUrl(link))}" alt=""></div>
+                    <div class="meta">
+                        <div class="title">\${escapeHtml(link.title)}</div>
+                        <div class="url">\${escapeHtml(getHostname(link.url))}</div>
+                        <div class="badge">\${escapeHtml(category?.name || '未分类')}</div>
+                    </div>
+                </a>
+            \`;
+        }).join('');
     };
 
     searchInput.addEventListener('input', render);
+    chips.addEventListener('click', (event) => {
+        const chip = event.target.closest('.chip');
+        if (!chip) return;
+        activeCategory = chip.dataset.id || 'all';
+        renderChips();
+        render();
+    });
     openSidepanelBtn?.addEventListener('click', async () => {
         try {
             const currentWindow = await chrome.windows.getCurrent();
@@ -910,6 +968,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (cached[CACHE_KEY]) {
                     allLinks = cached[CACHE_KEY].links || [];
                     allCategories = cached[CACHE_KEY].categories || [];
+                    renderChips();
                     render();
                     return;
                 }
@@ -925,6 +984,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             allLinks = data.links || [];
             allCategories = data.categories || [];
             await chrome.storage.local.set({ [CACHE_KEY]: data });
+            renderChips();
             render();
         } catch (e) {
             content.innerHTML = \`<div class="empty" style="color:#ef4444">加载失败<br>\${escapeHtml(e.message)}</div>\`;
