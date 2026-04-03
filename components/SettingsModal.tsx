@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, Bot, Key, Globe, Sparkles, PauseCircle, Wrench, Box, Copy, Check, LayoutTemplate, RefreshCw, Info, Download, Sidebar, Keyboard, MousePointerClick, AlertTriangle, Package, Zap, Menu, Upload } from 'lucide-react';
+import { X, Save, Bot, Key, Globe, Sparkles, PauseCircle, Wrench, Box, Copy, Check, LayoutTemplate, Info, Download, Sidebar, Keyboard, MousePointerClick, AlertTriangle, Package, Zap, Menu, Upload } from 'lucide-react';
 import { AIConfig, LinkItem, Category, SiteSettings } from '../types';
 import { generateLinkDescription } from '../services/geminiService';
 import JSZip from 'jszip';
@@ -16,47 +16,6 @@ interface SettingsModalProps {
   authToken: string | null;
 }
 
-const getRandomColor = () => {
-    const h = Math.floor(Math.random() * 360);
-    const s = 70 + Math.random() * 20;
-    const l = 45 + Math.random() * 15;
-    return `hsl(${h}, ${s}%, ${l}%)`;
-};
-
-const generateSvgIcon = (text: string, color1: string, color2: string) => {
-    let char = '';
-    if (text && text.length > 0) {
-        char = text.charAt(0);
-        if (/^[a-zA-Z]$/.test(char)) {
-            char = '云';
-        }
-    } else {
-        char = '云';
-    }
-    
-    const gradientId = 'g_' + Math.random().toString(36).substr(2, 9);
-
-    const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-        <defs>
-            <linearGradient id="${gradientId}" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0%" stop-color="${color1}"/>
-                <stop offset="100%" stop-color="${color2}"/>
-            </linearGradient>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#${gradientId})" rx="16"/>
-        <text x="50%" y="50%" dy=".35em" fill="white" font-family="Arial, sans-serif" font-weight="bold" font-size="32" text-anchor="middle">${char}</text>
-    </svg>`.trim();
-
-    try {
-        const encoded = window.btoa(unescape(encodeURIComponent(svg)));
-        return `data:image/svg+xml;base64,${encoded}`;
-    } catch (e) {
-        console.error("SVG Icon Generation Failed", e);
-        return '';
-    }
-};
-
 const SettingsModal: React.FC<SettingsModalProps> = ({ 
     isOpen, onClose, config, siteSettings, onSave, links, categories, onUpdateLinks, authToken 
 }) => {
@@ -72,8 +31,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
       passwordExpiryDays: siteSettings?.passwordExpiryDays ?? 7
   }));
   
-  const [generatedIcons, setGeneratedIcons] = useState<string[]>([]);
-  
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const shouldStopRef = useRef(false);
@@ -85,17 +42,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
   const faviconUploadRef = useRef<HTMLInputElement>(null);
   
   const [copiedStates, setCopiedStates] = useState<{[key: string]: boolean}>({});
-
-  const updateGeneratedIcons = (text: string) => {
-      const newIcons: string[] = [];
-      for (let i = 0; i < 6; i++) {
-          const c1 = getRandomColor();
-          const h2 = (parseInt(c1.split(',')[0].split('(')[1]) + 30 + Math.random() * 30) % 360;
-          const c2 = `hsl(${h2}, 70%, 50%)`;
-          newIcons.push(generateSvgIcon(text, c1, c2));
-      }
-      setGeneratedIcons(newIcons);
-  };
 
   useEffect(() => {
     if (isOpen) {
@@ -109,9 +55,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
           passwordExpiryDays: siteSettings?.passwordExpiryDays ?? 7
       };
       setLocalSiteSettings(safeSettings);
-      if (generatedIcons.length === 0) {
-          updateGeneratedIcons(safeSettings.navTitle);
-      }
 
       setIsProcessing(false);
       setIsZipping(false);
@@ -930,29 +873,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                                         本地上传
                                     </button>
                                     <p className="text-xs text-slate-500">会直接存成图片数据，不用图床。</p>
-                                </div>
-                                <div className="mt-3">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <p className="text-xs text-slate-500">选择生成的随机图标 (点击右侧按钮刷新):</p>
-                                        <button 
-                                            type="button"
-                                            onClick={() => updateGeneratedIcons(localSiteSettings.navTitle)}
-                                            className="text-xs flex items-center gap-1 text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700 px-2 py-1 rounded transition-colors"
-                                        >
-                                            <RefreshCw size={12} /> 随机生成
-                                        </button>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        {generatedIcons.map((icon, idx) => (
-                                            <button 
-                                                key={idx}
-                                                onClick={() => handleSiteChange('favicon', icon)}
-                                                className="w-8 h-8 rounded-xl overflow-hidden hover:ring-2 ring-blue-500 transition-all border border-slate-100 dark:border-slate-600"
-                                            >
-                                                <img src={icon} className="w-full h-full object-cover rounded-xl" />
-                                            </button>
-                                        ))}
-                                    </div>
                                 </div>
                             </div>
                             <div>
