@@ -95,6 +95,9 @@ const createRoundedFavicon = (source: string): Promise<string> => {
 };
 
 function App() {
+  const themeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const themeTransitionTimerRef = useRef<number | null>(null);
+
   // --- State ---
   const [links, setLinks] = useState<LinkItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -206,6 +209,17 @@ function App() {
 
   // Mobile Search State
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+  const [themeTransition, setThemeTransition] = useState<{
+    active: boolean;
+    x: number;
+    y: number;
+    radius: number;
+  }>({
+    active: false,
+    x: 0,
+    y: 0,
+    radius: 0,
+  });
   
   // Category Action Auth State
   const [categoryActionAuth, setCategoryActionAuth] = useState<{
@@ -791,8 +805,15 @@ function App() {
     updateFavicon();
   }, [siteSettings.title, siteSettings.favicon]);
 
-  const toggleTheme = () => {
-    const newMode = !darkMode;
+  useEffect(() => {
+    return () => {
+      if (themeTransitionTimerRef.current) {
+        window.clearTimeout(themeTransitionTimerRef.current);
+      }
+    };
+  }, []);
+
+  const applyThemeMode = (newMode: boolean) => {
     setDarkMode(newMode);
     if (newMode) {
       document.documentElement.classList.add('dark');
@@ -801,6 +822,42 @@ function App() {
       document.documentElement.classList.remove('dark');
       localStorage.setItem('theme', 'light');
     }
+  };
+
+  const toggleTheme = () => {
+    const newMode = !darkMode;
+    const rect = themeButtonRef.current?.getBoundingClientRect();
+    const x = rect ? rect.left + rect.width / 2 : window.innerWidth - 48;
+    const y = rect ? rect.top + rect.height / 2 : 32;
+    const radius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y)
+    );
+
+    if (themeTransitionTimerRef.current) {
+      window.clearTimeout(themeTransitionTimerRef.current);
+    }
+
+    if (newMode) {
+      setThemeTransition({ active: false, x, y, radius: 0 });
+      requestAnimationFrame(() => {
+        applyThemeMode(true);
+        requestAnimationFrame(() => {
+          setThemeTransition({ active: true, x, y, radius });
+        });
+      });
+    } else {
+      setThemeTransition({ active: true, x, y, radius });
+      applyThemeMode(false);
+      requestAnimationFrame(() => {
+        setThemeTransition({ active: false, x, y, radius: 0 });
+      });
+    }
+
+    themeTransitionTimerRef.current = window.setTimeout(() => {
+      setThemeTransition(prev => ({ ...prev, active: false, radius: 0 }));
+      themeTransitionTimerRef.current = null;
+    }, 750);
   };
 
   // 视图模式切换处理函数
@@ -2065,6 +2122,14 @@ function App() {
 
   return (
     <div className="flex h-screen overflow-hidden text-slate-900 dark:text-slate-50">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-[120] bg-slate-950 transition-[clip-path,opacity] duration-700 ease-out"
+        style={{
+          opacity: themeTransition.active || themeTransition.radius > 0 ? 1 : 0,
+          clipPath: `circle(${themeTransition.radius}px at ${themeTransition.x}px ${themeTransition.y}px)`,
+        }}
+      />
       <AuthModal
         isOpen={isAuthOpen}
         onLogin={handleLogin}
@@ -2471,7 +2536,7 @@ function App() {
             </div>
 
             {/* 主题切换按钮 - 移动端：搜索框展开时隐藏，桌面端始终显示 */}
-            <button onClick={toggleTheme} className={`${isMobileSearchOpen ? 'hidden' : 'flex'} lg:flex p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700`}>
+            <button ref={themeButtonRef} onClick={toggleTheme} className={`${isMobileSearchOpen ? 'hidden' : 'flex'} lg:flex p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700`}>
               {darkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
 
