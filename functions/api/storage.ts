@@ -197,6 +197,17 @@ export const onRequestGet = async (context: { env: Env; request: Request }) => {
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
+
+    if (getConfig === 'webdav') {
+      const authCheck = await validateAuth(request, env, corsHeaders, { requireSession: true });
+      if (!authCheck.ok) {
+        return authCheck.response;
+      }
+      const webDavConfig = await env.CLOUDNAV_KV.get('webdav_config');
+      return new Response(webDavConfig || '{}', {
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
     
     // 如果是获取网站配置请求
     if (getConfig === 'website') {
@@ -315,6 +326,13 @@ export const onRequestPost = async (context: { request: Request; env: Env }) => 
       }
       
       await env.CLOUDNAV_KV.put('search_config', JSON.stringify(body.config));
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
+
+    if (body.saveConfig === 'webdav') {
+      await env.CLOUDNAV_KV.put('webdav_config', JSON.stringify(body.config));
       return new Response(JSON.stringify({ success: true }), {
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });

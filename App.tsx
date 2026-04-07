@@ -695,6 +695,19 @@ function App() {
                     }));
                 }
             }
+
+            if (savedToken) {
+                const webDavConfigRes = await fetch('/api/storage?getConfig=webdav', {
+                    headers: buildAuthHeaders(savedToken)
+                });
+                if (webDavConfigRes.ok) {
+                    const webDavConfigData = await webDavConfigRes.json();
+                    if (webDavConfigData && (webDavConfigData.url || webDavConfigData.username || webDavConfigData.password || webDavConfigData.enabled !== undefined)) {
+                        setWebDavConfig(webDavConfigData);
+                        localStorage.setItem(WEBDAV_CONFIG_KEY, JSON.stringify(webDavConfigData));
+                    }
+                }
+            }
         } catch (e) {
             console.warn("Failed to fetch configs from KV.", e);
         }
@@ -1067,6 +1080,21 @@ function App() {
                 }
             } catch (e) {
                 console.warn("Failed to fetch AI config after login.", e);
+            }
+
+            try {
+                const webDavConfigRes = await fetch('/api/storage?getConfig=webdav', {
+                    headers: buildAuthHeaders(password)
+                });
+                if (webDavConfigRes.ok) {
+                    const webDavConfigData = await webDavConfigRes.json();
+                    if (webDavConfigData && (webDavConfigData.url || webDavConfigData.username || webDavConfigData.password || webDavConfigData.enabled !== undefined)) {
+                        setWebDavConfig(webDavConfigData);
+                        localStorage.setItem(WEBDAV_CONFIG_KEY, JSON.stringify(webDavConfigData));
+                    }
+                }
+            } catch (e) {
+                console.warn("Failed to fetch WebDAV config after login.", e);
             }
 
             if (pendingProtectedCategoryId) {
@@ -1530,6 +1558,21 @@ function App() {
   const handleSaveWebDavConfig = (config: WebDavConfig) => {
       setWebDavConfig(config);
       localStorage.setItem(WEBDAV_CONFIG_KEY, JSON.stringify(config));
+
+      if (authToken) {
+          fetch('/api/storage', {
+              method: 'POST',
+              headers: buildAuthHeaders(authToken, {
+                  'Content-Type': 'application/json',
+              }),
+              body: JSON.stringify({
+                  saveConfig: 'webdav',
+                  config,
+              })
+          }).catch((error) => {
+              console.error('Error saving WebDAV config to KV:', error);
+          });
+      }
   };
 
   const handleRestoreWebDavConfig = (config: WebDavConfig) => {

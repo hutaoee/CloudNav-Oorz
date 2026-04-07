@@ -30,35 +30,55 @@ const callWebDavProxy = async (operation: 'check' | 'upload' | 'download', confi
             })
         });
         
+        const data = await response.json().catch(() => null);
         if (!response.ok) {
-            console.error(`WebDAV Proxy Error: ${response.status}`);
-            return null;
+            console.error(`WebDAV Proxy Error: ${response.status}`, data);
+            return {
+                success: false,
+                status: response.status,
+                error: data?.error || `HTTP ${response.status}`
+            };
         }
-        
-        return await response.json();
+
+        return data;
     } catch (e) {
         console.error("WebDAV Proxy Network Error", e);
-        return null;
+        return {
+            success: false,
+            error: e instanceof Error ? e.message : 'Network Error'
+        };
     }
 }
 
-export const checkWebDavConnection = async (config: WebDavConfig): Promise<boolean> => {
-    if (!config.url || !config.username || !config.password) return false;
+export const checkWebDavConnection = async (config: WebDavConfig): Promise<{ success: boolean; error?: string }> => {
+    if (!config.url || !config.username || !config.password) {
+        return { success: false, error: '请先填完整 WebDAV 配置' };
+    }
     const result = await callWebDavProxy('check', config);
-    return result?.success === true;
+    return {
+        success: result?.success === true,
+        error: result?.success === true ? undefined : result?.error || '连接失败'
+    };
 };
 
-export const uploadBackup = async (config: WebDavConfig, data: BackupPayload): Promise<boolean> => {
+export const uploadBackup = async (config: WebDavConfig, data: BackupPayload): Promise<{ success: boolean; error?: string }> => {
     const result = await callWebDavProxy('upload', config, data);
-    return result?.success === true;
+    return {
+        success: result?.success === true,
+        error: result?.success === true ? undefined : result?.error || '上传失败'
+    };
 };
 
-export const uploadBackupWithTimestamp = async (config: WebDavConfig, data: BackupPayload): Promise<{ success: boolean; filename: string }> => {
+export const uploadBackupWithTimestamp = async (config: WebDavConfig, data: BackupPayload): Promise<{ success: boolean; filename: string; error?: string }> => {
     const now = new Date();
     const timestamp = now.toISOString().replace(/[:.]/g, '-').replace('T', '_').split('.')[0];
     const filename = `cloudnav_backup_${timestamp}.json`;
     const result = await callWebDavProxy('upload', config, data, filename);
-    return { success: result?.success === true, filename };
+    return {
+        success: result?.success === true,
+        filename,
+        error: result?.success === true ? undefined : result?.error || '上传失败'
+    };
 };
 
 export const downloadBackup = async (config: WebDavConfig): Promise<BackupPayload | null> => {

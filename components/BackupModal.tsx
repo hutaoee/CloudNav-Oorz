@@ -27,6 +27,7 @@ const BackupModal: React.FC<BackupModalProps> = ({
   const [testResult, setTestResult] = useState<'success' | 'fail' | null>(null);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'uploading' | 'downloading' | 'success' | 'error'>('idle');
   const [statusMsg, setStatusMsg] = useState('');
+  const [testMessage, setTestMessage] = useState('');
   const [includeWebDavConfig, setIncludeWebDavConfig] = useState(false);
   const [restoreWebDavConfig, setRestoreWebDavConfig] = useState(false);
 
@@ -42,6 +43,7 @@ const BackupModal: React.FC<BackupModalProps> = ({
     if(isOpen) {
         setConfig(webDavConfig);
         setTestResult(null);
+        setTestMessage('');
         setSyncStatus('idle');
         setIncludeWebDavConfig(false);
         setRestoreWebDavConfig(false);
@@ -51,8 +53,10 @@ const BackupModal: React.FC<BackupModalProps> = ({
   const handleTestConnection = async () => {
     setIsTesting(true);
     setTestResult(null);
-    const success = await checkWebDavConnection(config);
-    setTestResult(success ? 'success' : 'fail');
+    setTestMessage('');
+    const result = await checkWebDavConnection(config);
+    setTestResult(result.success ? 'success' : 'fail');
+    setTestMessage(result.success ? '连接成功' : (result.error || '连接失败'));
     setIsTesting(false);
   };
 
@@ -67,13 +71,13 @@ const BackupModal: React.FC<BackupModalProps> = ({
   const handleBackupToCloud = async () => {
     setSyncStatus('uploading');
     setStatusMsg('正在上传...');
-    const success = await uploadBackup(config, buildBackupPayload());
-    if (success) {
+    const result = await uploadBackup(config, buildBackupPayload());
+    if (result.success) {
         setSyncStatus('success');
         setStatusMsg('备份成功！');
     } else {
         setSyncStatus('error');
-        setStatusMsg('上传失败，请检查配置或网络。');
+        setStatusMsg(result.error || '上传失败，请检查配置或网络。');
     }
   };
 
@@ -86,7 +90,7 @@ const BackupModal: React.FC<BackupModalProps> = ({
         setStatusMsg(`备份成功！文件名: ${result.filename}`);
     } else {
         setSyncStatus('error');
-        setStatusMsg('上传失败，请检查配置或网络。');
+        setStatusMsg(result.error || '上传失败，请检查配置或网络。');
     }
   };
 
@@ -215,8 +219,8 @@ const BackupModal: React.FC<BackupModalProps> = ({
                         >
                             <Save size={12} /> 保存配置
                         </button>
-                        {testResult === 'success' && <span className="text-xs text-green-500 flex items-center gap-1"><CheckCircle2 size={12}/> 连接成功</span>}
-                        {testResult === 'fail' && <span className="text-xs text-red-500 flex items-center gap-1"><AlertCircle size={12}/> 连接失败</span>}
+                        {testResult === 'success' && <span className="text-xs text-green-500 flex items-center gap-1"><CheckCircle2 size={12}/> {testMessage || '连接成功'}</span>}
+                        {testResult === 'fail' && <span className="text-xs text-red-500 flex items-center gap-1"><AlertCircle size={12}/> {testMessage || '连接失败'}</span>}
                     </div>
                 </div>
             </section>
