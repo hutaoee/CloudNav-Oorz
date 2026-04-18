@@ -2456,7 +2456,7 @@ function App() {
                   setIsMobileSearchOpen(!isMobileSearchOpen);
                   //if (searchMode !== 'external') {
                   //  handleSearchModeChange('external');
-                  }
+                 // }
                 }}
                 className="sm:flex md:hidden lg:hidden p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"
                 title="搜索"
